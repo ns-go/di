@@ -34,7 +34,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 		if d.itemType == nil {
 			return nil, errors.New("Cannot create instance, Because unknow type of item.")
 		}
-		instance = reflect.New(d.itemType)
+		instance = reflect.New(d.itemType).Elem().Interface()
 	}
 
 	typeOfInstance := reflect.TypeOf(instance)
@@ -202,7 +202,7 @@ func ResolveByName[TResult any](c *Container, name string) (*TResult, error) {
 }
 
 func Resolve[TResult any](c *Container) (*TResult, error) {
-	val, err := c.ResolveByType(reflect.TypeOf(new(TResult)))
+	val, err := c.ResolveByType(reflect.TypeOf(new(TResult)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func Resolve[TResult any](c *Container) (*TResult, error) {
 }
 
 func RegisterScoped[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T))
+	t := reflect.TypeOf(new(T)).Elem()
 	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
 		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
 	})
@@ -231,7 +231,7 @@ func RegisterScoped[T any](c *Container, safe bool) error {
 }
 
 func RegisterTransient[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T))
+	t := reflect.TypeOf(new(T)).Elem()
 	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
 		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
 	})
@@ -251,7 +251,7 @@ func RegisterTransient[T any](c *Container, safe bool) error {
 }
 
 func RegisterSingleton[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T))
+	t := reflect.TypeOf(new(T)).Elem()
 	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
 		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
 	})
@@ -304,7 +304,7 @@ func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Contai
 		}
 	}
 
-	t := reflect.TypeOf(new(T))
+	t := reflect.TypeOf(new(T)).Elem()
 	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
 		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
 	})
