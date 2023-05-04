@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"unsafe"
 
 	"github.com/ns-go/di/internal/utils"
 )
 
 type Container struct {
-	items           []*ItemDescriptor
+	namedItems      map[string]*ItemDescriptor
+	typeItems       map[reflect.Type]*ItemDescriptor
 	scoped          bool
 	masterContainer *Container
 }
@@ -24,23 +26,21 @@ type injectFieldInfo struct {
 func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 	tagExp := regexp.MustCompile("di.inject:")
 
-	var instance any
+	var value reflect.Value
 	if d.factory != nil {
-		instance = d.factory(*c)
+		instance := d.factory(*c)
 		if instance == nil {
 			return nil, nil
 		}
+		value = reflect.ValueOf(instance)
 	} else {
 		if d.itemType == nil {
 			return nil, errors.New("Cannot create instance, Because unknow type of item.")
 		}
-		instance = reflect.New(d.itemType).Elem().Interface()
+		value = reflect.New(d.itemType).Elem()
 	}
 
-	typeOfInstance := reflect.TypeOf(instance)
-	if typeOfInstance.Kind() == reflect.Ptr {
-		typeOfInstance = typeOfInstance.Elem()
-	}
+	typeOfInstance := d.itemType
 
 	numField := typeOfInstance.NumField()
 	fields := make([]reflect.StructField, numField)
@@ -64,49 +64,53 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 
 	for _, f := range injectFields {
 
-		// if f.fieldType.Kind() != reflect.Ptr {
-		// 	return nil, errors.New("'di.inject' tag support only 'Pointer' type.")
-		// }
-
 		var des *ItemDescriptor
+		var finstance any
+		var fvalue reflect.Value
+		var err error
 		if f.itemName != nil && *f.itemName != "" {
-			descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool { return f.itemName == d.name })
-			if len(descriptors) < 1 {
-				return nil, errors.New(fmt.Sprintf("No any instance register with name '%s'.", *f.itemName))
-			}
-
-			des = descriptors[0]
-			val, err := c.resolveItemValue(des)
+			des = c.namedItems[*f.itemName]
+			finstance, err = c.ResolveByName(*f.itemName)
+			fvalue = reflect.ValueOf(finstance)
 			if err != nil {
 				return nil, err
 			}
-
-			if f.fieldType != des.itemType {
-				return nil, errors.New(fmt.Sprintf("Field '%s' type not match to item '%s'.", f.fieldName, *f.itemName))
-			}
-
-			reflect.ValueOf(instance).FieldByName(f.fieldName).Addr().Set(reflect.ValueOf(val))
 
 		} else {
-			descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool { return f.fieldType == d.itemType && (d.name == nil || *d.name == "") })
-			if len(descriptors) < 1 {
-				return nil, errors.New(fmt.Sprintf("Type '%s' dose not registered.", f.fieldType))
-			}
 
-			des = descriptors[0]
-			val, err := c.resolveItemValue(des)
+			fieldType := f.fieldType
+
+			if fieldType.Kind() == reflect.Ptr {
+				fieldType = fieldType.Elem()
+			}
+			des = c.typeItems[fieldType]
+			finstance, err = c.ResolveByType(fieldType)
+			fvalue = reflect.ValueOf(finstance)
 			if err != nil {
 				return nil, err
 			}
-			if f.fieldType != des.itemType {
-				return nil, errors.New(fmt.Sprintf("Field '%s' type not match to item '%s'.", f.fieldName, *f.itemName))
-			}
 
-			reflect.ValueOf(instance).FieldByName(f.fieldName).Addr().Set(reflect.ValueOf(val))
 		}
+
+		fieldType := f.fieldType
+		if fieldType.Kind() == reflect.Ptr {
+			ptrValue := reflect.New(fieldType.Elem())
+			ptrValue.Elem().Set(fvalue)
+			fieldType = fieldType.Elem()
+			fvalue = ptrValue
+		}
+
+		if fieldType != des.itemType {
+			return nil, errors.New(fmt.Sprintf("Field '%s' type not match to item '%s'.", f.fieldName, *f.itemName))
+		}
+
+		f1 := value.FieldByName(f.fieldName)
+		x := reflect.NewAt(f1.Type(), unsafe.Pointer(f1.UnsafeAddr())).Elem()
+		x.Set(fvalue)
+
 	}
 
-	return instance, nil
+	return value.Interface(), nil
 }
 
 func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
@@ -140,23 +144,21 @@ func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
 }
 
 func (c *Container) ResolveByName(name string) (any, error) {
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool { return *d.name == name })
-	if len(descriptors) == 0 {
-		return nil, errors.New(fmt.Sprintf("No any instance register with name '%s'.", name))
+	des := c.namedItems[name]
+	if des == nil {
+		return nil, errors.New(fmt.Sprintf("No any instance register by name '%s'.", name))
 	}
-	val, err := c.resolveItemValue(descriptors[0])
+	val, err := c.resolveItemValue(des)
 	return val, err
 }
 
 func (c *Container) ResolveByType(t reflect.Type) (any, error) {
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
-	})
-	if len(descriptors) == 0 {
-		return nil, errors.New(fmt.Sprintf("Type '%s' not registered.", t))
+	des := c.typeItems[t]
+	if des == nil {
+		return nil, errors.New(fmt.Sprintf("Type '%s' not registered.", t.Name()))
 	}
 
-	val, err := c.resolveItemValue(descriptors[0])
+	val, err := c.resolveItemValue(des)
 	return val, err
 }
 
@@ -167,23 +169,29 @@ func (c *Container) NewScope() (*Container, error) {
 	childContainer := Container{}
 	childContainer.masterContainer = c
 	childContainer.scoped = true
-	items := make([]*ItemDescriptor, len(c.items))
-	for i := 0; i < len(c.items); i++ {
-		des := c.items[i]
-		if des.lifetime == Singleton {
-			items[i] = des
+	nameditems := make(map[string]*ItemDescriptor)
+	typeitems := make(map[reflect.Type]*ItemDescriptor)
+
+	for k, el := range c.namedItems {
+		nameditems[k] = el
+	}
+
+	for k, el := range c.typeItems {
+		if el.lifetime == Singleton {
+			typeitems[k] = el
 		} else {
-			items[i] = &ItemDescriptor{
-				name:     des.name,
-				itemType: des.itemType,
-				lifetime: des.lifetime,
+			typeitems[k] = &ItemDescriptor{
+				name:     el.name,
+				itemType: el.itemType,
+				lifetime: el.lifetime,
 				instance: nil,
-				factory:  des.factory,
+				factory:  el.factory,
 			}
 		}
 	}
 
-	childContainer.items = items
+	childContainer.namedItems = nameditems
+	childContainer.typeItems = typeitems
 
 	return &childContainer, nil
 }
@@ -210,93 +218,56 @@ func Resolve[TResult any](c *Container) (*TResult, error) {
 	return &val2, err
 }
 
-func RegisterScoped[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T)).Elem()
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
-	})
-
-	if len(descriptors) > 0 {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t))
+func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) error {
+	if t.Kind() == reflect.Ptr {
+		err := errors.New("Cannot register type of pointer.")
 		if safe {
 			return err
 		} else {
 			panic(err)
 		}
-	} else {
-		c.items = append(c.items, &ItemDescriptor{itemType: t, lifetime: Scoped})
 	}
 
-	return nil
-}
-
-func RegisterTransient[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T)).Elem()
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
-	})
-
-	if len(descriptors) > 0 {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t))
+	des := c.typeItems[t]
+	if des != nil {
+		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t.Name()))
 		if safe {
 			return err
 		} else {
 			panic(err)
 		}
-	} else {
-		c.items = append(c.items, &ItemDescriptor{itemType: t, lifetime: Transient})
 	}
 
+	c.typeItems[t] = &ItemDescriptor{itemType: t, lifetime: lifetime}
 	return nil
 }
 
-func RegisterSingleton[T any](c *Container, safe bool) error {
-	t := reflect.TypeOf(new(T)).Elem()
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
-	})
-
-	if len(descriptors) > 0 {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t))
-		if safe {
-			return err
-		} else {
-			panic(err)
-		}
-	} else {
-		c.items = append(c.items, &ItemDescriptor{itemType: t, lifetime: Singleton})
-	}
-
-	return nil
-}
-
-func RegisterByName(c *Container, name string, value any, safe bool) error {
-	if value == nil {
-		err := errors.New("Value could not be null.")
-		if safe {
-			return err
-		}
-	}
+func (c *Container) RegisterByName(name string, value any, safe bool) error {
 	t := reflect.TypeOf(value)
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.name != nil && *d.name == name
-	})
+	if t.Kind() == reflect.Ptr {
+		err := errors.New("Cannot register type of pointer.")
+		if safe {
+			return err
+		} else {
+			panic(err)
+		}
+	}
 
-	if len(descriptors) > 0 {
+	des := c.namedItems[name]
+	if des != nil {
 		err := errors.New(fmt.Sprintf("Item name '%s' is already registered.", name))
 		if safe {
 			return err
 		} else {
 			panic(err)
 		}
-	} else {
-		c.items = append(c.items, &ItemDescriptor{itemType: t, lifetime: Singleton, instance: value})
 	}
 
+	c.namedItems[name] = &ItemDescriptor{itemType: t, lifetime: Singleton, name: &name, instance: value}
 	return nil
 }
 
-func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Container) T, safe bool) error {
+func (c *Container) RegisterFactory(t reflect.Type, lifetime Lifetime, factory ItemFactory, safe bool) error {
 	if factory == nil {
 		err := errors.New("Factory could not be null.")
 		if safe {
@@ -304,29 +275,63 @@ func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Contai
 		}
 	}
 
-	t := reflect.TypeOf(new(T)).Elem()
-	descriptors := utils.FilterSlice(c.items, func(d *ItemDescriptor) bool {
-		return d.itemType != nil && d.itemType == t && (d.name == nil || *d.name == "")
-	})
-
-	if len(descriptors) > 0 {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t))
+	if t.Kind() == reflect.Ptr {
+		err := errors.New("Cannot register type of pointer.")
 		if safe {
 			return err
 		} else {
 			panic(err)
 		}
-	} else {
-		var fac ItemFactory = func(c Container) any { return factory(c) }
-		c.items = append(c.items, &ItemDescriptor{itemType: t, lifetime: lifetime, factory: fac})
 	}
 
+	des := c.typeItems[t]
+	if des != nil {
+		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t.Name()))
+		if safe {
+			return err
+		} else {
+			panic(err)
+		}
+	}
+
+	c.typeItems[t] = &ItemDescriptor{itemType: t, lifetime: lifetime, factory: factory}
 	return nil
+}
+
+func RegisterScoped[T any](c *Container, safe bool) error {
+	t := reflect.TypeOf(new(T)).Elem()
+	err := c.RegisterType(t, Scoped, safe)
+	return err
+}
+
+func RegisterTransient[T any](c *Container, safe bool) error {
+	t := reflect.TypeOf(new(T)).Elem()
+	err := c.RegisterType(t, Transient, safe)
+	return err
+}
+
+func RegisterSingleton[T any](c *Container, safe bool) error {
+	t := reflect.TypeOf(new(T)).Elem()
+	err := c.RegisterType(t, Singleton, safe)
+	return err
+}
+
+func RegisterByName(c *Container, name string, value any, safe bool) error {
+	err := c.RegisterByName(name, value, safe)
+	return err
+}
+
+func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Container) T, safe bool) error {
+	t := reflect.TypeOf(new(T)).Elem()
+	err := c.RegisterFactory(t, lifetime, func(c Container) any { return factory(c) }, safe)
+
+	return err
 }
 
 func NewContainer() *Container {
 	return &Container{
-		items:           make([]*ItemDescriptor, 0),
+		namedItems:      make(map[string]*ItemDescriptor),
+		typeItems:       make(map[reflect.Type]*ItemDescriptor),
 		scoped:          false,
 		masterContainer: nil,
 	}
