@@ -1,4 +1,4 @@
-# NS Go Dependency Injection Library (ns-go/di)
+# NS-Go Dependency Injection Library (ns-go/di)
 
 This is a simple dependency injection library for Go, designed to make it easy to manage dependencies between components in your application.
 
@@ -11,7 +11,7 @@ This is a simple dependency injection library for Go, designed to make it easy t
 
 ## Installation
 
-To install NS-DI, use go get:
+To install NS-GO/DI, use go get:
 
 ```bash
 go get github.com/ns-go/di
@@ -27,7 +27,7 @@ package main
 
 import (
     "fmt"
-    "github.com/ns-go/di"
+    "github.com/ns-go/di/pkg/di"
 )
 
 type Foo struct {
@@ -85,4 +85,4 @@ Contributions are welcome! To contribute to ns-go/di, fork the repository and su
 
 ## License
 
-NS-DI is licensed under the [MIT License](https://github.com/ns-go/di/blob/main/LICENSE).
+NS-GO/DI is licensed under the [MIT License](https://github.com/ns-go/di/blob/main/LICENSE).
