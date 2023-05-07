@@ -35,7 +35,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 		value = reflect.ValueOf(instance)
 	} else {
 		if d.itemType == nil {
-			return nil, errors.New("Cannot create instance, Because unknow type of item.")
+			return nil, errors.New("cannot create instance, Because unknow type of item")
 		}
 		value = reflect.New(d.itemType).Elem()
 	}
@@ -101,7 +101,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 		}
 
 		if fieldType != des.itemType {
-			return nil, errors.New(fmt.Sprintf("Field '%s' type not match to item '%s'.", f.fieldName, *f.itemName))
+			return nil, fmt.Errorf("field '%s' type not match to item '%s'", f.fieldName, *f.itemName)
 		}
 
 		f1 := value.FieldByName(f.fieldName)
@@ -115,7 +115,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 
 func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
 	if d.lifetime == Scoped && !c.scoped {
-		return nil, errors.New("Cannot resolve scoped item with none scoped container.")
+		return nil, errors.New("cannot resolve scoped item with none scoped container")
 	}
 
 	if d.lifetime == Singleton || d.lifetime == Scoped { //Scoped items are cloned from  master container
@@ -146,7 +146,7 @@ func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
 func (c *Container) ResolveByName(name string) (any, error) {
 	des := c.namedItems[name]
 	if des == nil {
-		return nil, errors.New(fmt.Sprintf("No any instance register by name '%s'.", name))
+		return nil, fmt.Errorf("no any instance register by name '%s'", name)
 	}
 	val, err := c.resolveItemValue(des)
 	return val, err
@@ -155,7 +155,7 @@ func (c *Container) ResolveByName(name string) (any, error) {
 func (c *Container) ResolveByType(t reflect.Type) (any, error) {
 	des := c.typeItems[t]
 	if des == nil {
-		return nil, errors.New(fmt.Sprintf("Type '%s' not registered.", t.Name()))
+		return nil, fmt.Errorf("type '%s' not registered", t.Name())
 	}
 
 	val, err := c.resolveItemValue(des)
@@ -164,7 +164,7 @@ func (c *Container) ResolveByType(t reflect.Type) (any, error) {
 
 func (c *Container) NewScope() (*Container, error) {
 	if c.scoped {
-		return nil, errors.New("Cannot create scope from none-master container.")
+		return nil, errors.New("cannot create scope from none-master container")
 	}
 	childContainer := Container{}
 	childContainer.masterContainer = c
@@ -220,7 +220,7 @@ func Resolve[TResult any](c *Container) (*TResult, error) {
 
 func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) error {
 	if t.Kind() == reflect.Ptr {
-		err := errors.New("Cannot register type of pointer.")
+		err := errors.New("cannot register type of pointer")
 		if safe {
 			return err
 		} else {
@@ -230,7 +230,7 @@ func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) e
 
 	des := c.typeItems[t]
 	if des != nil {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t.Name()))
+		err := fmt.Errorf("type '%s' is already registered", t.Name())
 		if safe {
 			return err
 		} else {
@@ -245,7 +245,7 @@ func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) e
 func (c *Container) RegisterByName(name string, value any, safe bool) error {
 	t := reflect.TypeOf(value)
 	if t.Kind() == reflect.Ptr {
-		err := errors.New("Cannot register type of pointer.")
+		err := errors.New("cannot register type of pointer")
 		if safe {
 			return err
 		} else {
@@ -255,7 +255,7 @@ func (c *Container) RegisterByName(name string, value any, safe bool) error {
 
 	des := c.namedItems[name]
 	if des != nil {
-		err := errors.New(fmt.Sprintf("Item name '%s' is already registered.", name))
+		err := fmt.Errorf("item name '%s' is already registered", name)
 		if safe {
 			return err
 		} else {
@@ -269,14 +269,14 @@ func (c *Container) RegisterByName(name string, value any, safe bool) error {
 
 func (c *Container) RegisterFactory(t reflect.Type, lifetime Lifetime, factory ItemFactory, safe bool) error {
 	if factory == nil {
-		err := errors.New("Factory could not be null.")
+		err := errors.New("factory could not be null")
 		if safe {
 			return err
 		}
 	}
 
 	if t.Kind() == reflect.Ptr {
-		err := errors.New("Cannot register type of pointer.")
+		err := errors.New("cannot register type of pointer")
 		if safe {
 			return err
 		} else {
@@ -286,7 +286,7 @@ func (c *Container) RegisterFactory(t reflect.Type, lifetime Lifetime, factory I
 
 	des := c.typeItems[t]
 	if des != nil {
-		err := errors.New(fmt.Sprintf("Type '%s' is already registered.", t.Name()))
+		err := fmt.Errorf("type '%s' is already registered", t.Name())
 		if safe {
 			return err
 		} else {

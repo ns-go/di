@@ -38,12 +38,12 @@ func TestRegisterByName(t *testing.T) {
 	err = di.RegisterByName(constainer, "test", Service1{}, true)
 
 	if err == nil {
-		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New(fmt.Sprintf("Item name '%s' is already registered.", "test")))
+		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, fmt.Errorf("item name '%s' is already registered", "test"))
 	}
 
 	err = di.RegisterByName(constainer, "test2", &Service1{}, true)
 	if err == nil {
-		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New("Cannot register type of pointer."))
+		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New("cannot register type of pointer"))
 	}
 }
 
@@ -64,7 +64,7 @@ func TestRegisterByType(t *testing.T) {
 	err = di.RegisterSingleton[Service2](constainer, true)
 
 	if err == nil {
-		t.Errorf(`RegisterSingleton[Service2](constainer, true) = %v;  wont %v`, err, errors.New(fmt.Sprintf("Type '%s' is already registered.", reflect.TypeOf(Service2{}).Name())))
+		t.Errorf(`RegisterSingleton[Service2](constainer, true) = %v;  wont %v`, err, fmt.Errorf("Type '%s' is already registered.", reflect.TypeOf(Service2{}).Name()))
 	}
 
 	err = di.RegisterSingleton[*Service2](constainer, true)
