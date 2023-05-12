@@ -19,3 +19,7 @@ func MapSlice[T any, TResult any](sl []T, mapFunc func(T) TResult) []TResult {
 
 	return result
 }
+
+func Ptr[T any](val T) *T {
+	return &val
+}

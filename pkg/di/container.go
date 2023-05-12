@@ -307,7 +307,11 @@ func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
 		}
 	}
 
-	des := c.typeItems[t]
+	var _t = t
+	if t.Kind() == reflect.Pointer {
+		_t = t.Elem()
+	}
+	des := c.typeItems[_t]
 	if des != nil {
 		err := fmt.Errorf("type '%s' is already registered", t.Name())
 		if safe {
@@ -321,19 +325,21 @@ func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
 	val := reflect.ValueOf(value)
 	ptr.Elem().Set(val)
 	c.typeItems[t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+
+	if t.Kind() == reflect.Pointer {
+		ptr := reflect.ValueOf(value)
+		c.typeItems[_t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+	} else {
+		ptr := reflect.New(t)
+		val := reflect.ValueOf(value)
+		ptr.Elem().Set(val)
+		c.typeItems[_t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+	}
 	return nil
 }
 
 func (c *Container) RegisterByName(name string, value any, safe bool) error {
 	t := reflect.TypeOf(value)
-	if t.Kind() == reflect.Ptr {
-		err := errors.New("cannot register type of pointer")
-		if safe {
-			return err
-		} else {
-			panic(err)
-		}
-	}
 
 	des := c.namedItems[name]
 	if des != nil {
@@ -345,10 +351,16 @@ func (c *Container) RegisterByName(name string, value any, safe bool) error {
 		}
 	}
 
-	ptr := reflect.New(t)
-	val := reflect.ValueOf(value)
-	ptr.Elem().Set(val)
-	c.namedItems[name] = &ItemDescriptor{itemType: t, lifetime: Singleton, name: &name, instance: &ptr}
+	if t.Kind() == reflect.Pointer {
+		ptr := reflect.ValueOf(value)
+		c.namedItems[name] = &ItemDescriptor{itemType: t.Elem(), lifetime: Singleton, name: &name, instance: &ptr}
+	} else {
+		ptr := reflect.New(t)
+		val := reflect.ValueOf(value)
+		ptr.Elem().Set(val)
+		c.namedItems[name] = &ItemDescriptor{itemType: t, lifetime: Singleton, name: &name, instance: &ptr}
+	}
+
 	return nil
 }
 
@@ -412,7 +424,7 @@ func RegisterByName(c *Container, name string, value any, safe bool) error {
 	return err
 }
 
-func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Container) T, safe bool) error {
+func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Container) *T, safe bool) error {
 	t := reflect.TypeOf(new(T)).Elem()
 	err := c.RegisterFactory(t, lifetime, func(c Container) any { return factory(c) }, safe)
 

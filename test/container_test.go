@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ns-go/di/internal/utils"
 	"github.com/ns-go/di/pkg/di"
 )
 
@@ -44,10 +45,10 @@ func TestRegisterByName(t *testing.T) {
 		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, fmt.Errorf("item name '%s' is already registered", "test"))
 	}
 
-	err = di.RegisterByName(constainer, "test2", &Service1{}, true)
-	if err == nil {
-		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New("cannot register type of pointer"))
-	}
+	// err = di.RegisterByName(constainer, "test2", &Service1{}, true)
+	// if err == nil {
+	// 	t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New("cannot register type of pointer"))
+	// }
 }
 
 func TestRegisterByType(t *testing.T) {
@@ -200,7 +201,7 @@ func TestScope(t *testing.T) {
 
 func TestFactory(t *testing.T) {
 	constainer := di.NewContainer()
-	di.RegisterFactory(constainer, di.Singleton, func(c di.Container) Service1 { return Service1{} }, false)
+	di.RegisterFactory(constainer, di.Singleton, func(c di.Container) *Service1 { return utils.Ptr(Service1{}) }, false)
 	di.RegisterTransient[Service5](constainer, false)
 	s5, err := di.Resolve[Service5](constainer)
 	if s5 == nil || err != nil {
