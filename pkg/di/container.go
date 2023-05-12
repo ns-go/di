@@ -10,6 +10,7 @@ import (
 	"github.com/ns-go/di/internal/utils"
 )
 
+// Container is the main dependency injection container.
 type Container struct {
 	namedItems      map[string]*ItemDescriptor
 	typeItems       map[reflect.Type]*ItemDescriptor
@@ -17,28 +18,36 @@ type Container struct {
 	masterContainer *Container
 }
 
+// injectFieldInfo holds information about a struct field that requires injection.
 type injectFieldInfo struct {
 	fieldName string
 	fieldType reflect.Type
 	itemName  *string
 }
 
+// createInstance creates an instance of an item registered in the container.
 func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 	tagExp := regexp.MustCompile("di.inject:")
 
 	var value reflect.Value
+
+	// If the item has a factory function, call it to create the instance.
 	if d.factory != nil {
 		instance := d.factory(*c)
 		if instance == nil {
 			return nil, nil
 		}
 		value = reflect.ValueOf(instance)
+
+		// If the factory function returns a non-nil value that is not a pointer,
+		// create a new pointer to that value.
 		if value.Kind() != reflect.Pointer {
 			ptrVal := reflect.New(d.itemType)
 			ptrVal.Elem().Set(value)
 			value = ptrVal
 		}
 	} else {
+		// If no factory function is defined, create a new instance using reflection.
 		if d.itemType == nil {
 			return nil, errors.New("cannot create instance, Because unknow type of item")
 		}
@@ -54,8 +63,10 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 		fields[i] = typeOfInstance.Field(i)
 	}
 
+	// Filter the struct fields to include only those with the "di.inject" tag.
 	fields = utils.FilterSlice(fields, func(f reflect.StructField) bool { return tagExp.MatchString(string(f.Tag)) })
 
+	// Map the filtered fields to injectFieldInfo structs.
 	injectFields := utils.MapSlice(fields, func(f reflect.StructField) injectFieldInfo {
 		result := injectFieldInfo{}
 		result.fieldName = f.Name
@@ -69,6 +80,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 
 	for _, f := range injectFields {
 
+		// Check if the field type is a pointer.
 		if f.fieldType.Kind() != reflect.Pointer {
 			return nil, errors.New("type of injection field allow only pointer")
 		}
@@ -76,6 +88,8 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 		var des *ItemDescriptor
 		var finstance *reflect.Value
 		var err error
+
+		// Resolve the dependency either by name or by type.
 		if f.itemName != nil && *f.itemName != "" {
 			des = c.namedItems[*f.itemName]
 			finstance, err = c.resolveByName(*f.itemName)
@@ -99,12 +113,6 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 		}
 
 		fieldType := f.fieldType
-		// if fieldType.Kind() == reflect.Ptr {
-		// 	ptrValue := reflect.New(fieldType.Elem())
-		// 	ptrValue.Elem().Set(fvalue)
-		// 	fieldType = fieldType.Elem()
-		// 	fvalue = ptrValue
-		// }
 
 		if fieldType.Elem() != des.itemType {
 			return nil, fmt.Errorf("field '%s' type not match to item '%s'", f.fieldName, *f.itemName)
@@ -117,6 +125,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 			f1 = value.FieldByName(f.fieldName)
 		}
 
+		// Set the field value to the resolved instance.
 		x := reflect.NewAt(f1.Type(), unsafe.Pointer(f1.UnsafeAddr())).Elem()
 		x.Set((*finstance))
 
@@ -155,6 +164,7 @@ func (c *Container) resolveItemValue(d *ItemDescriptor) (*reflect.Value, error) 
 	}
 }
 
+// resolveByName resolves an item from the container by name.
 func (c *Container) resolveByName(name string) (*reflect.Value, error) {
 	des := c.namedItems[name]
 	if des == nil {
@@ -180,6 +190,7 @@ func (c *Container) ResolveByName(name string) (any, error) {
 	return val1, err
 }
 
+// resolveByType resolves an item from the container by type.
 func (c *Container) resolveByType(t reflect.Type) (*reflect.Value, error) {
 	des := c.typeItems[t]
 	if des == nil {
@@ -408,6 +419,7 @@ func RegisterFactory[T any](c *Container, lifetime Lifetime, factory func(Contai
 	return err
 }
 
+// NewContainer creates a new dependency injection container.
 func NewContainer() *Container {
 	return &Container{
 		namedItems:      make(map[string]*ItemDescriptor),
