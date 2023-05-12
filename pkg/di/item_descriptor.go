@@ -8,7 +8,7 @@ type ItemDescriptor struct {
 	name     *string
 	itemType reflect.Type
 	lifetime Lifetime
-	instance any
+	instance *reflect.Value
 	factory  ItemFactory
 }
 

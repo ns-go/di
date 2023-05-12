@@ -21,6 +21,7 @@ type Service3 struct {
 
 type Service4 struct {
 	service1 *Service1 `di.inject:"test"`
+	id       int
 }
 
 type Service5 struct {
@@ -94,11 +95,17 @@ func TestResloveSingleton(t *testing.T) {
 func TestReslove(t *testing.T) {
 	constainer := di.NewContainer()
 	di.RegisterTransient[Service1](constainer, false)
+	di.RegisterTransient[Service3](constainer, false)
 
 	s1, err := di.Resolve[Service1](constainer)
 
 	if s1 == nil || err != nil {
-		t.Errorf(`Resolve[Service1](constainer) = %v, %v; want %v, %v`, s1, err, Service1{}, "error")
+		t.Errorf(`Resolve[Service1](constainer) = %v, %v; want %v, %v`, s1, err, Service1{}, nil)
+	}
+
+	s3, err := di.Resolve[Service3](constainer)
+	if s3 != nil || err == nil {
+		t.Errorf(`Resolve[Service3](constainer) = %v, %v; want %v, %v`, s1, err, nil, "error")
 	}
 }
 
@@ -149,9 +156,15 @@ func TestScope(t *testing.T) {
 	}
 
 	s4, err = di.Resolve[Service4](scope)
+	s4.id = 100
 
 	if s4 == nil || err != nil {
 		t.Errorf("Resolve[Service4](scope) = %v,%v; want %v,%v", s4, err, Service4{}, nil)
+	}
+
+	s42, err := di.Resolve[Service4](scope)
+	if s4.id != s42.id || err != nil {
+		t.Errorf("s42.id = %v,%v; want %v,%v", s42.id, err, s4.id, nil)
 	}
 
 	scope2, err := constainer.NewScope()
@@ -168,5 +181,29 @@ func TestScope(t *testing.T) {
 
 	if s4 == s4_2 {
 		t.Error("Difference scope must resolve not same value")
+	}
+}
+
+func TestFactory(t *testing.T) {
+	constainer := di.NewContainer()
+	di.RegisterFactory(constainer, di.Transient, func(c di.Container) Service1 { return Service1{} }, false)
+	di.RegisterTransient[Service5](constainer, false)
+	s5, err := di.Resolve[Service5](constainer)
+	if s5 == nil || err != nil {
+		t.Errorf("Resolve[Service4](constainer) = %v,%v; want %v,%v", s5, err, Service4{}, nil)
+	}
+}
+
+func TestRegisterValue(t *testing.T) {
+	constainer := di.NewContainer()
+	di.RegisterValue(constainer, Service1{}, false)
+	di.RegisterTransient[Service5](constainer, false)
+	s5, err := di.Resolve[Service5](constainer)
+	if s5 == nil || err != nil {
+		t.Errorf("Resolve[Service4](constainer) = %v,%v; want %v,%v", s5, err, Service4{}, nil)
+	} else {
+		if s5.service1 == nil {
+			t.Errorf("s5.service1 = %v; want %v", s5.service1, Service1{})
+		}
 	}
 }

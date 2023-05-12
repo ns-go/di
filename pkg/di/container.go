@@ -23,7 +23,7 @@ type injectFieldInfo struct {
 	itemName  *string
 }
 
-func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
+func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 	tagExp := regexp.MustCompile("di.inject:")
 
 	var value reflect.Value
@@ -33,11 +33,16 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 			return nil, nil
 		}
 		value = reflect.ValueOf(instance)
+		if value.Kind() != reflect.Pointer {
+			ptrVal := reflect.New(d.itemType)
+			ptrVal.Elem().Set(value)
+			value = ptrVal
+		}
 	} else {
 		if d.itemType == nil {
 			return nil, errors.New("cannot create instance, Because unknow type of item")
 		}
-		value = reflect.New(d.itemType).Elem()
+		value = reflect.New(d.itemType)
 	}
 
 	typeOfInstance := d.itemType
@@ -64,14 +69,16 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 
 	for _, f := range injectFields {
 
+		if f.fieldType.Kind() != reflect.Pointer {
+			return nil, errors.New("type of injection field allow only pointer")
+		}
+
 		var des *ItemDescriptor
-		var finstance any
-		var fvalue reflect.Value
+		var finstance *reflect.Value
 		var err error
 		if f.itemName != nil && *f.itemName != "" {
 			des = c.namedItems[*f.itemName]
-			finstance, err = c.ResolveByName(*f.itemName)
-			fvalue = reflect.ValueOf(finstance)
+			finstance, err = c.resolveByName(*f.itemName)
 			if err != nil {
 				return nil, err
 			}
@@ -84,8 +91,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 				fieldType = fieldType.Elem()
 			}
 			des = c.typeItems[fieldType]
-			finstance, err = c.ResolveByType(fieldType)
-			fvalue = reflect.ValueOf(finstance)
+			finstance, err = c.resolveByType(fieldType)
 			if err != nil {
 				return nil, err
 			}
@@ -93,27 +99,33 @@ func (c *Container) createInstance(d *ItemDescriptor) (any, error) {
 		}
 
 		fieldType := f.fieldType
-		if fieldType.Kind() == reflect.Ptr {
-			ptrValue := reflect.New(fieldType.Elem())
-			ptrValue.Elem().Set(fvalue)
-			fieldType = fieldType.Elem()
-			fvalue = ptrValue
-		}
+		// if fieldType.Kind() == reflect.Ptr {
+		// 	ptrValue := reflect.New(fieldType.Elem())
+		// 	ptrValue.Elem().Set(fvalue)
+		// 	fieldType = fieldType.Elem()
+		// 	fvalue = ptrValue
+		// }
 
-		if fieldType != des.itemType {
+		if fieldType.Elem() != des.itemType {
 			return nil, fmt.Errorf("field '%s' type not match to item '%s'", f.fieldName, *f.itemName)
 		}
 
-		f1 := value.FieldByName(f.fieldName)
+		var f1 reflect.Value
+		if value.Kind() == reflect.Pointer {
+			f1 = value.Elem().FieldByName(f.fieldName)
+		} else {
+			f1 = value.FieldByName(f.fieldName)
+		}
+
 		x := reflect.NewAt(f1.Type(), unsafe.Pointer(f1.UnsafeAddr())).Elem()
-		x.Set(fvalue)
+		x.Set((*finstance))
 
 	}
 
-	return value.Interface(), nil
+	return &value, nil
 }
 
-func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
+func (c *Container) resolveItemValue(d *ItemDescriptor) (*reflect.Value, error) {
 	if d.lifetime == Scoped && !c.scoped {
 		return nil, errors.New("cannot resolve scoped item with none scoped container")
 	}
@@ -143,11 +155,37 @@ func (c *Container) resolveItemValue(d *ItemDescriptor) (any, error) {
 	}
 }
 
+func (c *Container) resolveByName(name string) (*reflect.Value, error) {
+	des := c.namedItems[name]
+	if des == nil {
+		return nil, fmt.Errorf("no any instance register by name '%s'", name)
+	}
+	val, err := c.resolveItemValue(des)
+	return val, err
+}
+
 func (c *Container) ResolveByName(name string) (any, error) {
 	des := c.namedItems[name]
 	if des == nil {
 		return nil, fmt.Errorf("no any instance register by name '%s'", name)
 	}
+	val, err := c.resolveItemValue(des)
+
+	if err != nil {
+		return nil, err
+	}
+
+	val1 := (*val).Interface()
+
+	return val1, err
+}
+
+func (c *Container) resolveByType(t reflect.Type) (*reflect.Value, error) {
+	des := c.typeItems[t]
+	if des == nil {
+		return nil, fmt.Errorf("type '%s' not registered", t.Name())
+	}
+
 	val, err := c.resolveItemValue(des)
 	return val, err
 }
@@ -159,7 +197,12 @@ func (c *Container) ResolveByType(t reflect.Type) (any, error) {
 	}
 
 	val, err := c.resolveItemValue(des)
-	return val, err
+	if err != nil {
+		return nil, err
+	}
+	val1 := (*val).Interface()
+
+	return val1, err
 }
 
 func (c *Container) NewScope() (*Container, error) {
@@ -205,17 +248,18 @@ func ResolveByName[TResult any](c *Container, name string) (*TResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	val2 := val.(TResult)
-	return &val2, err
+	val2 := val.(*TResult)
+	return val2, err
 }
 
 func Resolve[TResult any](c *Container) (*TResult, error) {
-	val, err := c.ResolveByType(reflect.TypeOf(new(TResult)).Elem())
+	val, err := c.resolveByType(reflect.TypeOf(new(TResult)).Elem())
 	if err != nil {
 		return nil, err
 	}
-	val2 := val.(TResult)
-	return &val2, err
+
+	result := val.Interface().(*TResult)
+	return result, err
 }
 
 func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) error {
@@ -242,6 +286,33 @@ func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) e
 	return nil
 }
 
+func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
+	if t.Kind() == reflect.Ptr {
+		err := errors.New("cannot register type of pointer")
+		if safe {
+			return err
+		} else {
+			panic(err)
+		}
+	}
+
+	des := c.typeItems[t]
+	if des != nil {
+		err := fmt.Errorf("type '%s' is already registered", t.Name())
+		if safe {
+			return err
+		} else {
+			panic(err)
+		}
+	}
+
+	ptr := reflect.New(t)
+	val := reflect.ValueOf(value)
+	ptr.Elem().Set(val)
+	c.typeItems[t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+	return nil
+}
+
 func (c *Container) RegisterByName(name string, value any, safe bool) error {
 	t := reflect.TypeOf(value)
 	if t.Kind() == reflect.Ptr {
@@ -263,7 +334,10 @@ func (c *Container) RegisterByName(name string, value any, safe bool) error {
 		}
 	}
 
-	c.namedItems[name] = &ItemDescriptor{itemType: t, lifetime: Singleton, name: &name, instance: value}
+	ptr := reflect.New(t)
+	val := reflect.ValueOf(value)
+	ptr.Elem().Set(val)
+	c.namedItems[name] = &ItemDescriptor{itemType: t, lifetime: Singleton, name: &name, instance: &ptr}
 	return nil
 }
 
@@ -313,6 +387,12 @@ func RegisterTransient[T any](c *Container, safe bool) error {
 func RegisterSingleton[T any](c *Container, safe bool) error {
 	t := reflect.TypeOf(new(T)).Elem()
 	err := c.RegisterType(t, Singleton, safe)
+	return err
+}
+
+func RegisterValue[T any](c *Container, value T, safe bool) error {
+	t := reflect.TypeOf(new(T)).Elem()
+	err := c.RegisterValue(t, value, safe)
 	return err
 }
 
