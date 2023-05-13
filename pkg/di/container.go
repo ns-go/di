@@ -115,7 +115,7 @@ func (c *Container) createInstance(d *ItemDescriptor) (*reflect.Value, error) {
 		fieldType := f.fieldType
 
 		if fieldType.Elem() != des.itemType {
-			return nil, fmt.Errorf("field '%s' type not match to item '%s'", f.fieldName, *f.itemName)
+			return nil, fmt.Errorf("field '%s' type not match to item type '%s'", f.fieldName, des.itemType)
 		}
 
 		var f1 reflect.Value
@@ -297,15 +297,17 @@ func (c *Container) RegisterType(t reflect.Type, lifetime Lifetime, safe bool) e
 	return nil
 }
 
-func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
-	if t.Kind() == reflect.Ptr {
-		err := errors.New("cannot register type of pointer")
+func (c *Container) RegisterInstance(value any, safe bool) error {
+	if value == nil {
+		err := errors.New("cannot register nil")
 		if safe {
 			return err
 		} else {
 			panic(err)
 		}
 	}
+
+	t := reflect.TypeOf(value)
 
 	var _t = t
 	if t.Kind() == reflect.Pointer {
@@ -323,12 +325,12 @@ func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
 
 	if t.Kind() == reflect.Pointer {
 		ptr := reflect.ValueOf(value)
-		c.typeItems[_t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+		c.typeItems[_t] = &ItemDescriptor{itemType: _t, lifetime: Singleton, instance: &ptr}
 	} else {
-		ptr := reflect.New(t)
+		ptr := reflect.New(_t)
 		val := reflect.ValueOf(value)
 		ptr.Elem().Set(val)
-		c.typeItems[_t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
+		c.typeItems[_t] = &ItemDescriptor{itemType: _t, lifetime: Singleton, instance: &ptr}
 	}
 	return nil
 }
@@ -408,9 +410,8 @@ func RegisterSingleton[T any](c *Container, safe bool) error {
 	return err
 }
 
-func RegisterValue[T any](c *Container, value T, safe bool) error {
-	t := reflect.TypeOf(new(T)).Elem()
-	err := c.RegisterValue(t, value, safe)
+func RegisterInstance[T any](c *Container, value *T, safe bool) error {
+	err := c.RegisterInstance(value, safe)
 	return err
 }
 

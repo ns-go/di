@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ns-go/di/internal/utils"
 	"github.com/ns-go/di/pkg/di"
 )
 
@@ -33,7 +32,8 @@ type Service5 struct {
 
 func TestRegisterByName(t *testing.T) {
 	constainer := di.NewContainer()
-	err := di.RegisterByName(constainer, "test", Service1{}, true)
+	s1_org := Service1{}
+	err := di.RegisterByName(constainer, "test", &s1_org, true)
 
 	if err != nil {
 		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont nil`, err)
@@ -45,10 +45,15 @@ func TestRegisterByName(t *testing.T) {
 		t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, fmt.Errorf("item name '%s' is already registered", "test"))
 	}
 
-	// err = di.RegisterByName(constainer, "test2", &Service1{}, true)
-	// if err == nil {
-	// 	t.Errorf(`RegisterByName(constainer, "test", Service1{}, true) = %v;  wont %v`, err, errors.New("cannot register type of pointer"))
-	// }
+	s1, err := di.ResolveByName[Service1](constainer, "test")
+	if s1 == nil || err != nil {
+		t.Errorf(`s1, err := di.ResolveByName[Service1](constainer, "test") = %v, %v; want %v, %v`, s1, err, &Service1{}, "error")
+	} else {
+		s1.id = 100
+		if s1_org.id != 100 {
+			t.Errorf(`s1_org.id = %v; want %v`, s1_org.id, 100)
+		}
+	}
 }
 
 func TestRegisterByType(t *testing.T) {
@@ -201,7 +206,8 @@ func TestScope(t *testing.T) {
 
 func TestFactory(t *testing.T) {
 	constainer := di.NewContainer()
-	di.RegisterFactory(constainer, di.Singleton, func(c di.Container) *Service1 { return utils.Ptr(Service1{}) }, false)
+	s1_org := Service1{}
+	di.RegisterFactory(constainer, di.Singleton, func(c di.Container) *Service1 { return &s1_org }, false)
 	di.RegisterTransient[Service5](constainer, false)
 	s5, err := di.Resolve[Service5](constainer)
 	if s5 == nil || err != nil {
@@ -218,12 +224,17 @@ func TestFactory(t *testing.T) {
 		if s12.id != 100 {
 			t.Errorf("s12.id = %v; want %v", s12.id, 100)
 		}
+
+		if s1_org.id != 100 {
+			t.Errorf("s1_org.id = %v; want %v", s1_org.id, 100)
+		}
 	}
 }
 
-func TestRegisterValue(t *testing.T) {
+func TestRegisterInstance(t *testing.T) {
 	constainer := di.NewContainer()
-	di.RegisterValue(constainer, Service1{}, false)
+	s1_org := &Service1{}
+	di.RegisterInstance(constainer, s1_org, false)
 	di.RegisterTransient[Service5](constainer, false)
 	s5, err := di.Resolve[Service5](constainer)
 	if s5 == nil || err != nil {
@@ -243,6 +254,10 @@ func TestRegisterValue(t *testing.T) {
 		s12, _ := di.Resolve[Service1](constainer)
 		if s12.id != 100 {
 			t.Errorf("s12.id = %v; want %v", s12.id, 100)
+		}
+
+		if s1_org.id != 100 {
+			t.Errorf("s1_org.id = %v; want %v", s1_org.id, 100)
 		}
 	}
 }
