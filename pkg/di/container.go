@@ -321,11 +321,6 @@ func (c *Container) RegisterValue(t reflect.Type, value any, safe bool) error {
 		}
 	}
 
-	ptr := reflect.New(t)
-	val := reflect.ValueOf(value)
-	ptr.Elem().Set(val)
-	c.typeItems[t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
-
 	if t.Kind() == reflect.Pointer {
 		ptr := reflect.ValueOf(value)
 		c.typeItems[_t] = &ItemDescriptor{itemType: t, lifetime: Singleton, instance: &ptr}
