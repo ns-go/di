@@ -74,8 +74,14 @@ di.RegisterTransient[Service1](constainer, false)
 // Register a new instance of Service1 for every new scope.
 di.RegisterScoped[Service1](constainer, false)
 
-// Register a named instance of Service1.
+// Register a named instance of Service1 lifetime of instance is singleton.
 di.RegisterByName(constainer, "test", Service1{}, false)
+
+// Register a instance of Service1 lifetime of instance is singleton.
+di.RegisterInstance(constainer, Service1{}, false)
+
+// Register a factory function of Service1.
+di.RegisterFactory(constainer, di.Singleton, func(c di.Container) *Service1 { return &Service1{} }, false)
 
 ```
 
